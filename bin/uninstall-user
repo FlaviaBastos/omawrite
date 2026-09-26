@@ -1,0 +1,17 @@
+#!/usr/bin/env sh
+set -eu
+
+BIN_DIR="${XDG_BIN_HOME:-$HOME/.local/bin}"
+APP_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/applications"
+TARGET="$BIN_DIR/omawrite"
+DESKTOP="$APP_DIR/omawrite.desktop"
+
+rm -f "$TARGET" "$DESKTOP"
+
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database "$APP_DIR" >/dev/null 2>&1 || true
+fi
+
+echo "Removed the user overlay."
+echo "Omawrite now resolves to: $(command -v omawrite 2>/dev/null || echo '/usr/bin/omawrite')"
+echo "Omarchy updates keep managing that packaged binary."

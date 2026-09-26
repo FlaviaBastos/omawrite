@@ -7,12 +7,14 @@ TEMPLATE = app
 HEADERS += \
     src/backend.h \
     src/markdownhighlighter.h \
+    src/previewdocument.h \
     src/systemtheme.h
 
 SOURCES += \
     src/main.cpp \
     src/backend.cpp \
     src/markdownhighlighter.cpp \
+    src/previewdocument.cpp \
     src/systemtheme.cpp
 
 RESOURCES += src/resources.qrc

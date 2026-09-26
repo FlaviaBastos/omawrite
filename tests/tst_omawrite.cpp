@@ -1,5 +1,7 @@
 #include <QtTest>
+#include <QDir>
 #include <QFont>
+#include <QImage>
 #include <QQmlComponent>
 #include <QQmlContext>
 #include <QQmlEngine>
@@ -7,6 +9,7 @@
 
 #include "backend.h"
 #include "markdownhighlighter.h"
+#include "previewdocument.h"
 
 class OmawriteTest : public QObject {
     Q_OBJECT
@@ -174,8 +177,14 @@ private slots:
         QScopedPointer<QObject> window(component.create());
         QVERIFY2(window, qPrintable(component.errorString()));
 
-        QVERIFY(window->findChild<QObject *>(QStringLiteral("sourceEditor")));
-        QVERIFY(!window->findChild<QObject *>(QStringLiteral("renderedPreview")));
+        QObject *editor = window->findChild<QObject *>(QStringLiteral("sourceEditor"));
+        QVERIFY(editor);
+        QVERIFY(editor->property("visible").toBool());
+        QObject *previewWindow = window->findChild<QObject *>(QStringLiteral("previewWindow"));
+        QVERIFY(previewWindow);
+        QVERIFY(!previewWindow->property("visible").toBool());
+        QVERIFY(window->findChild<QObject *>(QStringLiteral("renderedPreview")));
+        QVERIFY(window->findChild<QObject *>(QStringLiteral("previewButton")));
         QVERIFY(!window->findChild<QObject *>(QStringLiteral("modeToggle")));
 
         QObject *saveButton = window->findChild<QObject *>(QStringLiteral("saveButton"));
@@ -190,6 +199,97 @@ private slots:
         QSignalSpy openDialogSpy(&backend, &Backend::openDialogRequested);
         QVERIFY(QMetaObject::invokeMethod(openButton, "clicked"));
         QCOMPARE(openDialogSpy.count(), 1);
+    }
+
+    void opensPreviewInASeparateWindowWithoutHidingSource() {
+        const QString mainQmlPath = QFINDTESTDATA("../src/Main.qml");
+        QVERIFY(!mainQmlPath.isEmpty());
+
+        Backend backend;
+        QQmlEngine engine;
+        engine.rootContext()->setContextProperty(QStringLiteral("backend"), &backend);
+        QQmlComponent component(&engine, QUrl::fromLocalFile(mainQmlPath));
+        QVERIFY2(component.isReady(), qPrintable(component.errorString()));
+        QScopedPointer<QObject> window(component.create());
+        QVERIFY2(window, qPrintable(component.errorString()));
+
+        QObject *editor = window->findChild<QObject *>(QStringLiteral("sourceEditor"));
+        QObject *previewWindow = window->findChild<QObject *>(QStringLiteral("previewWindow"));
+        QObject *toggle = window->findChild<QObject *>(QStringLiteral("previewButton"));
+        QVERIFY(editor);
+        QVERIFY(previewWindow);
+        QVERIFY(toggle);
+        QVERIFY(!previewWindow->property("visible").toBool());
+
+        const QString source = QStringLiteral("# Hello\n\n**world**");
+        editor->setProperty("text", source);
+        QVERIFY(QMetaObject::invokeMethod(toggle, "clicked"));
+        QVERIFY(previewWindow->property("visible").toBool());
+        QVERIFY(editor->property("visible").toBool());
+        QCOMPARE(editor->property("text").toString(), source);
+        QTRY_VERIFY(backend.previewPlainText().contains(QStringLiteral("Hello")));
+        QVERIFY(!backend.previewPlainText().contains(QLatin1Char('#')));
+
+        QVERIFY(QMetaObject::invokeMethod(window.data(), "togglePreview"));
+        QVERIFY(!previewWindow->property("visible").toBool());
+        QCOMPARE(editor->property("text").toString(), source);
+        QVERIFY(editor->property("visible").toBool());
+    }
+
+    void updatesPreviewAfterSourceEdits() {
+        Backend backend;
+        backend.setPreviewMarkdown(QStringLiteral("# One"));
+        QVERIFY(backend.previewPlainText().contains(QStringLiteral("One")));
+        backend.setPreviewMarkdown(QStringLiteral("# Two"));
+        QVERIFY(backend.previewPlainText().contains(QStringLiteral("Two")));
+        QVERIFY(!backend.previewPlainText().contains(QStringLiteral("One")));
+    }
+
+    void rendersMarkdownWithoutSourceMarkers() {
+        Backend backend;
+        backend.setPreviewMarkdown(
+            QStringLiteral("# Hello\n\n**world**\n\n<script>alert(1)</script>"));
+        const QString plain = backend.previewPlainText();
+        QVERIFY(plain.contains(QStringLiteral("Hello")));
+        QVERIFY(!plain.contains(QLatin1Char('#')));
+        QVERIFY(plain.contains(QStringLiteral("world")));
+        // MarkdownNoHTML leaves unknown tags as characters instead of running
+        // them. Remote images are refused in confinesPreviewImagesToTheDocumentDirectory.
+        QVERIFY(plain.contains(QStringLiteral("alert(1)")));
+    }
+
+    void confinesPreviewImagesToTheDocumentDirectory() {
+        QTemporaryDir directory;
+        QVERIFY(directory.isValid());
+
+        const QString noteDir = directory.filePath(QStringLiteral("note"));
+        QVERIFY(QDir().mkpath(noteDir + QStringLiteral("/images")));
+
+        QImage img(8, 8, QImage::Format_RGB32);
+        img.fill(Qt::red);
+        const QString okPath = noteDir + QStringLiteral("/images/ok.png");
+        const QString escapePath = directory.filePath(QStringLiteral("escape.png"));
+        QVERIFY(img.save(okPath));
+        QVERIFY(img.save(escapePath));
+
+        PreviewDocument doc([](const QString &) {}, nullptr);
+        const QUrl baseUrl = QUrl::fromLocalFile(noteDir + QLatin1Char('/'));
+        doc.setImageRoot(noteDir);
+        doc.setImageWidth(400);
+        doc.setBaseUrl(baseUrl);
+        doc.setAllowedImages(
+            QStringLiteral("![ok](images/ok.png) ![bad](../escape.png) ![web](https://example.com/x.png)"),
+            baseUrl);
+
+        const QVariant ok = doc.loadImageResource(QUrl::fromLocalFile(okPath));
+        QVERIFY(!ok.value<QImage>().isNull());
+
+        const QVariant escaped = doc.loadImageResource(QUrl::fromLocalFile(escapePath));
+        QVERIFY(escaped.value<QImage>().isNull());
+
+        const QVariant web = doc.loadImageResource(
+            QUrl(QStringLiteral("https://example.com/x.png")));
+        QVERIFY(web.value<QImage>().isNull());
     }
 
     void scalesTextWithDesktopTextSize() {
