@@ -1,5 +1,6 @@
 #include <QtTest>
 #include <QDir>
+#include <QFile>
 #include <QFont>
 #include <QImage>
 #include <QQmlComponent>
@@ -290,6 +291,21 @@ private slots:
         const QVariant web = doc.loadImageResource(
             QUrl(QStringLiteral("https://example.com/x.png")));
         QVERIFY(web.value<QImage>().isNull());
+
+        const QString svgPath = noteDir + QStringLiteral("/images/ok.svg");
+        QFile svg(svgPath);
+        QVERIFY(svg.open(QIODevice::WriteOnly | QIODevice::Text));
+        svg.write("<svg xmlns=\"http://www.w3.org/2000/svg\"><rect width=\"8\" height=\"8\"/></svg>");
+        svg.close();
+        doc.setAllowedImages(QStringLiteral("![svg](images/ok.svg)"), baseUrl);
+        const QVariant svgImage = doc.loadImageResource(QUrl::fromLocalFile(svgPath));
+        QVERIFY(svgImage.value<QImage>().isNull());
+
+        QVERIFY(QFile::link(escapePath, noteDir + QStringLiteral("/images/link.png")));
+        doc.setAllowedImages(QStringLiteral("![link](images/link.png)"), baseUrl);
+        const QVariant linked = doc.loadImageResource(
+            QUrl::fromLocalFile(noteDir + QStringLiteral("/images/link.png")));
+        QVERIFY(linked.value<QImage>().isNull());
     }
 
     void scalesTextWithDesktopTextSize() {

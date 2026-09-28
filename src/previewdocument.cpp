@@ -1,6 +1,5 @@
 #include "previewdocument.h"
 
-#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QImage>
@@ -119,8 +118,10 @@ QVariant PreviewDocument::loadImageResource(const QUrl &url)
 
 QVariant PreviewDocument::loadResource(int type, const QUrl &url)
 {
+    // Never hand unknown resource types to QTextDocument: its default loader
+    // will fetch remote URLs. Images are the only resource this preview loads.
     if (type != QTextDocument::ImageResource)
-        return QTextDocument::loadResource(type, url);
+        return {};
 
     QUrl resolved = url;
     if (url.isRelative())
@@ -136,25 +137,19 @@ QVariant PreviewDocument::loadResource(int type, const QUrl &url)
         return {};
     }
 
-    QImageReader::setAllocationLimit(32);
-    if (path.endsWith(QStringLiteral(".svg"), Qt::CaseInsensitive)) {
-        QFile svg(path);
-        if (!svg.open(QIODevice::ReadOnly | QIODevice::Text))
-            return {};
-        const QString contents = QString::fromUtf8(svg.readAll());
-        static const QRegularExpression unsafeSvg(
-            QStringLiteral("(?:href|xlink:href)\\s*=\\s*[\"'](?!#)|"
-                           "url\\(\\s*[\"']?(?!#)|@import|<image\\b|xml-stylesheet|<script\\b"));
-        if (unsafeSvg.match(contents).hasMatch())
-            return {};
-    }
+    // SVG can pull in external resources; refuse it rather than denylisting
+    // individual tags.
+    if (path.endsWith(QStringLiteral(".svg"), Qt::CaseInsensitive))
+        return {};
 
+    QImageReader::setAllocationLimit(32);
     QImageReader reader(path);
     const QSize size = reader.size();
     if (!size.isValid())
         return {};
-    if (size.width() > m_imageWidth)
-        reader.setScaledSize(size.scaled(m_imageWidth, size.height(), Qt::KeepAspectRatio));
+    const int maxEdge = qMax(m_imageWidth, 1);
+    if (size.width() > maxEdge || size.height() > maxEdge * 4)
+        reader.setScaledSize(size.scaled(maxEdge, maxEdge * 4, Qt::KeepAspectRatio));
 
     const QImage image = reader.read();
     if (image.isNull())
@@ -168,8 +163,15 @@ QVariant PreviewDocument::loadResource(int type, const QUrl &url)
 void PreviewDocument::allowImage(const QString &destination, const QUrl &baseUrl)
 {
     const QUrl source(destination);
-    if (source.isRelative() && source.scheme().isEmpty())
-        m_allowedImages.insert(baseUrl.resolved(source).toLocalFile());
+    if (!source.isRelative() || !source.scheme().isEmpty())
+        return;
+
+    const QString localFile = baseUrl.resolved(source).toLocalFile();
+    const QString canonical = canonicalOrEmpty(localFile);
+    if (canonical.isEmpty() || !pathIsInsideRoot(canonical))
+        return;
+
+    m_allowedImages.insert(localFile);
 }
 
 QString PreviewDocument::referenceKey(const QString &label)
