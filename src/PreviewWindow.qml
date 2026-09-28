@@ -11,6 +11,9 @@ Window {
     minimumWidth: 720
     minimumHeight: 520
     visible: false
+    // Independent toplevel so Hyprland tiles it beside the editor.
+    transientParent: null
+    flags: Qt.Window
     title: "Preview — " + backend.fileName + " - Omawrite"
     color: backend.themeBackground
 
@@ -32,7 +35,6 @@ Window {
 
     function showPreview() {
         visible = true;
-        raise();
     }
 
     function hidePreview() {

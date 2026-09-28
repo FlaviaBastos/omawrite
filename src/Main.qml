@@ -783,6 +783,14 @@ ApplicationWindow {
                         return;
                     }
 
+                    if ((event.key === Qt.Key_E)
+                            && (event.modifiers & Qt.ControlModifier)
+                            && !(event.modifiers & (Qt.AltModifier | Qt.MetaModifier | Qt.ShiftModifier))) {
+                        win.togglePreview();
+                        event.accepted = true;
+                        return;
+                    }
+
                     var returnKey = event.key === Qt.Key_Return || event.key === Qt.Key_Enter;
                     var commandModifier = event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier);
                     if (returnKey && !commandModifier) {

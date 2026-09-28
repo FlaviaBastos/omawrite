@@ -20,8 +20,10 @@ To live on the fork:
 
 That builds the app and installs a user overlay:
 
-- `~/.local/bin/omawrite` (ahead of `/usr/bin` on PATH)
+- `~/.local/bin/omawrite`
 - `~/.local/share/applications/omawrite.desktop` (shadows the packaged launcher)
+
+On Omarchy, Super+Shift+W must launch that overlay binary. `uwsm-app -- omawrite` can still pick `/usr/bin/omawrite` because the session PATH lists `/usr/bin` first. `~/.config/hypr/bindings.lua` on this machine points Super+Shift+W at `~/.local/bin/omawrite`.
 
 Check which binary a launch will hit:
 

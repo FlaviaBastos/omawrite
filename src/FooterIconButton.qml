@@ -55,12 +55,12 @@ Item {
                 context.lineTo(11.5, 9.5);
                 context.lineTo(11.5, 13.5);
             } else if (control.iconName === "preview") {
-                context.ellipse(2, 5, 12, 7);
-                context.moveTo(2, 8.5);
-                context.quadraticCurveTo(8, 1.5, 14, 8.5);
-                context.quadraticCurveTo(8, 15.5, 2, 8.5);
-                context.moveTo(6.5, 8.5);
-                context.arc(8, 8.5, 1.5, 0, Math.PI * 2);
+                context.moveTo(2, 8);
+                context.quadraticCurveTo(8, 3.2, 14, 8);
+                context.quadraticCurveTo(8, 12.8, 2, 8);
+                context.closePath();
+                context.moveTo(9.6, 8);
+                context.arc(8, 8, 1.6, 0, Math.PI * 2);
             } else {
                 context.moveTo(2.5, 13);
                 context.lineTo(2.5, 3.5);
