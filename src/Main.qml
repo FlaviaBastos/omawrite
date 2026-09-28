@@ -44,8 +44,10 @@ ApplicationWindow {
     color: pageColor
 
     onClosing: function(close) {
-        if (closeConfirmed || !backend.modified)
+        if (closeConfirmed || !backend.modified) {
+            previewWindow.hidePreview();
             return;
+        }
 
         close.accepted = false;
         pendingAction = "close";
@@ -67,6 +69,7 @@ ApplicationWindow {
         var action = pendingAction;
         pendingAction = "";
         if (action === "close") {
+            previewWindow.hidePreview();
             closeConfirmed = true;
             close();
         } else if (action === "open") {
@@ -89,6 +92,23 @@ ApplicationWindow {
         win.visibility = win.visibility === Window.FullScreen
             ? Window.Windowed
             : Window.FullScreen;
+    }
+
+    function togglePreview() {
+        if (previewWindow.visible) {
+            previewTimer.stop();
+            previewWindow.hidePreview();
+            editor.forceActiveFocus();
+            return;
+        }
+        if (win.visibility === Window.FullScreen)
+            win.visibility = Window.Windowed;
+        previewWindow.width = Math.max(previewWindow.minimumWidth, win.width);
+        previewWindow.height = Math.max(previewWindow.minimumHeight, win.height);
+        backend.setPreviewMarkdown(editor.text);
+        backend.setPreviewWidth(previewWindow.previewWidth);
+        previewWindow.showPreview();
+        editor.forceActiveFocus();
     }
 
     function updateSearch() {
@@ -200,6 +220,12 @@ ApplicationWindow {
         sequence: "Ctrl+P"
         context: Qt.ApplicationShortcut
         onActivated: backend.printDocument()
+    }
+
+    Shortcut {
+        sequence: "Ctrl+E"
+        context: Qt.ApplicationShortcut
+        onActivated: win.togglePreview()
     }
 
     Shortcut {
@@ -331,9 +357,20 @@ ApplicationWindow {
         standardButtons: Dialog.Close
         anchors.centerIn: parent
         contentItem: Label {
-            text: "Ctrl+S  Save\nCtrl+Shift+S  Save As\nCtrl+O  Open\nCtrl+N  New Window\nCtrl+F  Find\nCtrl+H  Find and Replace\nCtrl+B  Bold\nCtrl+I  Italic\nCtrl+K  Link\nCtrl+P  Print\nF11 / Super+F  Fullscreen\nCtrl+?  Shortcuts"
+            text: "Ctrl+S  Save\nCtrl+Shift+S  Save As\nCtrl+O  Open\nCtrl+N  New Window\nCtrl+F  Find\nCtrl+H  Find and Replace\nCtrl+B  Bold\nCtrl+I  Italic\nCtrl+K  Link\nCtrl+P  Print\nCtrl+E  Preview\nF11 / Super+F  Fullscreen\nCtrl+?  Shortcuts"
             lineHeight: 1.5
         }
+    }
+
+    Timer {
+        id: previewTimer
+        interval: 150
+        repeat: false
+        onTriggered: backend.setPreviewMarkdown(editor.text)
+    }
+
+    PreviewWindow {
+        id: previewWindow
     }
 
     Item {
@@ -776,6 +813,8 @@ ApplicationWindow {
                     var contentChanged = backend.editorTextChanged();
                     if (win.searchOpen && contentChanged)
                         win.updateSearch();
+                    if (previewWindow.visible && contentChanged)
+                        previewTimer.restart();
                 }
 
                 Text {
@@ -819,6 +858,14 @@ ApplicationWindow {
                 iconColor: win.mutedColor
                 tooltip: "Open"
                 onClicked: backend.openDialog()
+            }
+
+            FooterIconButton {
+                objectName: "previewButton"
+                iconName: "preview"
+                iconColor: previewWindow.visible ? backend.themeAccent : win.mutedColor
+                tooltip: previewWindow.visible ? "Close preview" : "Preview"
+                onClicked: win.togglePreview()
             }
 
             Label {

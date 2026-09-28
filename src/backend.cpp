@@ -32,6 +32,7 @@
 #include <algorithm>
 
 #include "markdownhighlighter.h"
+#include "previewdocument.h"
 
 constexpr qreal typoraLineHeightPercent = 140;
 const QString lastSaveDirectorySetting = QStringLiteral("file/lastSaveDirectory");
@@ -97,6 +98,15 @@ Backend::Backend(QObject *parent) : QObject(parent) {
     m_recoveryTimer.setSingleShot(true);
     m_recoveryTimer.setInterval(750);
     connect(&m_recoveryTimer, &QTimer::timeout, this, &Backend::writeRecovery);
+    connect(&m_previewImageWatcher, &QFileSystemWatcher::fileChanged, this,
+            [this](const QString &path) {
+                if (QFile::exists(path))
+                    m_previewImageWatcher.addPath(path);
+                if (m_previewDocument) {
+                    setPreviewMarkdown(m_previewMarkdown);
+                    emit previewChanged();
+                }
+            });
     connect(&m_fileWatcher, &QFileSystemWatcher::fileChanged, this,
             [this](const QString &path) {
                 if (path != m_fileUrl.toLocalFile())
@@ -192,6 +202,68 @@ void Backend::attachDocument(QObject *textDocument) {
 
     applyDocumentTypography();
     restoreRecovery();
+}
+
+void Backend::ensurePreviewDocument()
+{
+    if (m_previewDocument)
+        return;
+
+    m_previewDocument = new PreviewDocument(
+        [this](const QString &path) { watchPreviewImage(path); }, this);
+}
+
+void Backend::attachPreviewDocument(QObject *textDocument)
+{
+    auto *quickDocument = qobject_cast<QQuickTextDocument *>(textDocument);
+    if (!quickDocument) {
+        setStatus(QStringLiteral("Could not attach the Markdown preview."));
+        return;
+    }
+
+    ensurePreviewDocument();
+    quickDocument->setTextDocument(m_previewDocument);
+    setPreviewMarkdown(m_previewMarkdown);
+}
+
+void Backend::setPreviewMarkdown(const QString &markdown)
+{
+    m_previewMarkdown = markdown;
+    ensurePreviewDocument();
+
+    if (m_document)
+        m_previewDocument->setDefaultFont(m_document->defaultFont());
+
+    const QUrl baseUrl = m_fileUrl.isLocalFile()
+        ? QUrl::fromLocalFile(QFileInfo(m_fileUrl.toLocalFile()).absolutePath()
+                              + QLatin1Char('/'))
+        : QUrl();
+    m_previewDocument->setBaseUrl(baseUrl);
+    m_previewDocument->setImageRoot(baseUrl.toLocalFile());
+    m_previewDocument->setAllowedImages(markdown, baseUrl);
+
+    const QStringList watchedImages = m_previewImageWatcher.files();
+    if (!watchedImages.isEmpty())
+        m_previewImageWatcher.removePaths(watchedImages);
+
+    m_previewDocument->setMarkdown(
+        markdown,
+        QTextDocument::MarkdownFeatures(QTextDocument::MarkdownDialectGitHub)
+            | QTextDocument::MarkdownNoHTML);
+    m_previewDocument->applyTypography();
+    emit previewChanged();
+}
+
+void Backend::setPreviewWidth(int width)
+{
+    ensurePreviewDocument();
+    if (m_previewDocument->setImageWidth(width))
+        setPreviewMarkdown(m_previewMarkdown);
+}
+
+QString Backend::previewPlainText() const
+{
+    return m_previewDocument ? m_previewDocument->toPlainText() : QString();
 }
 
 void Backend::openDialog() {
@@ -436,6 +508,8 @@ void Backend::loadDocumentText(const QString &text) {
     applyDocumentTypography();
     m_wordCountTimer.stop();
     setWordCount(countWords(text));
+    if (m_previewDocument)
+        setPreviewMarkdown(text);
 }
 
 void Backend::setFileUrl(const QUrl &url) {
@@ -445,6 +519,8 @@ void Backend::setFileUrl(const QUrl &url) {
     m_fileUrl = url;
     emit fileUrlChanged();
     watchCurrentFile();
+    if (m_previewDocument)
+        setPreviewMarkdown(m_previewMarkdown);
 }
 
 void Backend::setModified(bool modified) {
@@ -571,6 +647,12 @@ void Backend::watchCurrentFile() {
         m_fileWatcher.removePaths(watched);
     if (m_fileUrl.isLocalFile() && QFileInfo::exists(m_fileUrl.toLocalFile()))
         m_fileWatcher.addPath(m_fileUrl.toLocalFile());
+}
+
+void Backend::watchPreviewImage(const QString &path)
+{
+    if (!m_previewImageWatcher.files().contains(path))
+        m_previewImageWatcher.addPath(path);
 }
 
 void Backend::loadOmarchyTheme() {
